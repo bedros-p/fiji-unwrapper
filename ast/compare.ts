@@ -43,6 +43,7 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 			nodeType: node2.type,
 			description: getNodeDescription(node2)
 		});
+		// Base case additions/removals are inherently novel, no need to filter here.
 		return deviations;
 	}
 	if (node1 && !node2) {
@@ -54,6 +55,7 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 			nodeType: node1.type,
 			description: getNodeDescription(node1)
 		});
+		// Base case additions/removals are inherently novel, no need to filter here.
 		return deviations;
 	}
 	if (!node1 && !node2) {
@@ -66,6 +68,7 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 	// --- Type Check ---
 	if (node1.type !== node2.type) {
 		// Fundamental difference in node type. Report node1 removed, node2 added.
+		// These are considered novel changes, not moves.
 		deviations.push({
 			type: 'removal',
 			start: node1.start,
@@ -104,19 +107,20 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 
 		if (isString1 !== isString2 || (isString1 && lit1.value !== lit2.value)) {
 			// Different literal types (string vs non-string) or different string values.
+			// These are considered novel changes.
 			deviations.push({
 				type: 'removal',
 				start: node1.start,
 				end: node1.end,
 				nodeType: node1.type,
-				description: `Literal: ${lit1.raw}`
+				description: `Literal: ${lit1.raw}` // Use raw for better matching potential if needed later
 			});
 			deviations.push({
 				type: 'addition',
 				start: node2.start,
 				end: node2.end,
 				nodeType: node2.type,
-				description: `Literal: ${lit2.raw}`
+				description: `Literal: ${lit2.raw}` // Use raw for better matching potential
 			});
 			return deviations;
 		}
@@ -152,11 +156,13 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
     const keySet1 = new Set(keys1);
     const keySet2 = new Set(keys2);
     if (keys1.length !== keys2.length || !keys1.every(k => keySet2.has(k)) || !keys2.every(k => keySet1.has(k))) {
+        // Treat as fundamental change to parent, report as novel add/remove
         deviations.push({ type: 'removal', start: node1.start, end: node1.end, nodeType: node1.type, description: `Keys changed: ${keys1.join()}` });
         deviations.push({ type: 'addition', start: node2.start, end: node2.end, nodeType: node2.type, description: `Keys changed: ${keys2.join()}` });
         return deviations; // Stop comparison here if fundamental properties changed
     }
 
+    let accumulatedDeviations: Deviation[] = [];
 
 	// Iterate through the common relevant keys and compare their values.
 	for (const key of keys1) {
@@ -170,7 +176,7 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 
 		if (isNode(val1) || isNode(val2)) {
             // If one is a node and the other isn't (or both are nodes), compare recursively.
-			deviations.push(...compareASTs(isNode(val1) ? val1 : null, isNode(val2) ? val2 : null));
+			accumulatedDeviations.push(...compareASTs(isNode(val1) ? val1 : null, isNode(val2) ? val2 : null));
 		} else if (isNodeArray(val1) && isNodeArray(val2)) {
 			// If both values are arrays of AST nodes, compare them element by element.
 			const maxLength = Math.max(val1.length, val2.length);
@@ -179,7 +185,7 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 				const child2 = i < val2.length ? val2[i] : null;
                 // Only compare if at least one child exists (handles trailing nulls if needed)
                 if (child1 || child2) {
-				    deviations.push(...compareASTs(child1, child2));
+				    accumulatedDeviations.push(...compareASTs(child1, child2));
                 }
 			}
 		} else if (Array.isArray(val1) && Array.isArray(val2)) {
@@ -187,9 +193,12 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
             // Perform a simple comparison for non-node arrays (e.g., TemplateElement quasis).
             // If they differ in length or content, mark the parent node as changed.
             if (val1.length !== val2.length || JSON.stringify(val1) !== JSON.stringify(val2)) {
-                 deviations.push({ type: 'removal', start: node1.start, end: node1.end, nodeType: node1.type, description: `Non-node array changed in key '${key}'` });
-                 deviations.push({ type: 'addition', start: node2.start, end: node2.end, nodeType: node2.type, description: `Non-node array changed in key '${key}'` });
-                 return deviations; // Treat as fundamental change to parent
+                 // Treat as fundamental change to parent, report as novel add/remove
+                 accumulatedDeviations.push({ type: 'removal', start: node1.start, end: node1.end, nodeType: node1.type, description: `Non-node array changed in key '${key}'` });
+                 accumulatedDeviations.push({ type: 'addition', start: node2.start, end: node2.end, nodeType: node2.type, description: `Non-node array changed in key '${key}'` });
+                 // Treat as fundamental change to parent, stop comparing children of this node.
+                 // Filter moves before returning
+                 return filterMoves(accumulatedDeviations);
             }
         } else if (val1 !== val2) {
 			// If the values are primitives (or other non-node, non-array objects) and differ,
@@ -199,14 +208,15 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 			// - `kind` in VariableDeclaration ('var' vs 'let')
 			// - `computed`, `static`, `method`, `shorthand` flags in properties/methods
 			// We have already explicitly handled Identifiers and string Literals above.
-			deviations.push({
+            // Treat as fundamental change to parent, report as novel add/remove
+			accumulatedDeviations.push({
 				type: 'removal',
 				start: node1.start,
 				end: node1.end,
 				nodeType: node1.type,
 				description: `Property '${key}' changed from '${val1}'`
 			});
-			deviations.push({
+			accumulatedDeviations.push({
 				type: 'addition',
 				start: node2.start,
 				end: node2.end,
@@ -214,12 +224,78 @@ export function compareASTs(node1: acorn.Node | null, node2: acorn.Node | null):
 				description: `Property '${key}' changed to '${val2}'`
 			});
 			// Treat primitive property change as fundamental, stop comparing children of this node.
-			return deviations;
+            // Filter moves before returning
+			return filterMoves(accumulatedDeviations);
 		}
 		// If values are equal primitives, or recursively compared nodes/arrays yielded no deviations, continue checking other keys.
 	}
 
 	// If all relevant properties have been compared and no significant differences found according to the rules,
 	// return the accumulated deviations (which might be empty or contain changes from deeper nodes).
-	return deviations;
+    // Filter out moves before returning the final list for this level.
+	return filterMoves(accumulatedDeviations);
+}
+
+/**
+ * Filters a list of deviations, removing pairs of additions and removals
+ * that likely represent the same node being moved. Matching is based on
+ * nodeType and description.
+ *
+ * @param deviations The list of deviations to filter.
+ * @returns A filtered list containing only novel additions and removals.
+ */
+function filterMoves(deviations: Deviation[]): Deviation[] {
+    const removals = deviations.filter(d => d.type === 'removal');
+    const additions = deviations.filter(d => d.type === 'addition');
+
+    if (removals.length === 0 || additions.length === 0) {
+        return deviations; // No potential moves if one list is empty
+    }
+
+    const matchedAdditionIndices = new Set<number>();
+    const finalDeviations: Deviation[] = [];
+
+    // Create a map of additions for efficient lookup
+    // Key: `${nodeType}::${description}`, Value: Array of indices in the 'additions' array
+    const additionMap = new Map<string, number[]>();
+    additions.forEach((addition, index) => {
+        const key = `${addition.nodeType}::${addition.description || ''}`;
+        if (!additionMap.has(key)) {
+            additionMap.set(key, []);
+        }
+        additionMap.get(key)!.push(index);
+    });
+
+    // Try to match each removal with an addition
+    for (const removal of removals) {
+        const key = `${removal.nodeType}::${removal.description || ''}`;
+        const potentialMatches = additionMap.get(key);
+
+        if (potentialMatches && potentialMatches.length > 0) {
+            // Found a potential match. Use the first available one.
+            const matchIndex = potentialMatches.shift(); // Remove index from map value array
+            if (matchIndex !== undefined) {
+                 matchedAdditionIndices.add(matchIndex);
+                 // This removal is part of a move, so don't add it to finalDeviations
+            } else {
+                 // Should not happen if potentialMatches.length > 0, but defensively add removal
+                 finalDeviations.push(removal);
+            }
+             if (potentialMatches.length === 0) {
+                 additionMap.delete(key); // Clean up map if no more additions of this type
+             }
+        } else {
+            // No matching addition found, this is a novel removal
+            finalDeviations.push(removal);
+        }
+    }
+
+    // Add all additions that were not matched
+    additions.forEach((addition, index) => {
+        if (!matchedAdditionIndices.has(index)) {
+            finalDeviations.push(addition);
+        }
+    });
+
+    return finalDeviations;
 }
