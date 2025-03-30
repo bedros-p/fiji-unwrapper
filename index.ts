@@ -2,128 +2,153 @@ import { compareASTs } from "./ast/compare";
 import { generateAST } from "./ast/generate";
 import { generateDiffs } from "./diff/generate";
 import * as prettier from 'prettier';
-
-let snippet1 = `_.v4a = function(a, b, c) {
-	var d = c.jsonMode ? "application/json" : "text/plain"
-	  , e = (new _.eL).setModel(c.modelName);
-	d = _.ZK(_.YK(_.XK(_.WK(new _.VK, c.temperature), .95), 40), d);
-	d = _.as(d, _.Eu, 9, c.jsonMode ? c.schema : void 0);
-	b = _.lPa(_.fL(e, d), b);
-	b = _.XC(b, 7, _.tB, c.tools || []);
-	c.systemInstructions && _.gL(b, _.OOa(_.QK(new _.KK, "model"), _.vy(new _.sy, c.systemInstructions)));
-	if (c.safetySettings)
-		for (c = _.n(c.safetySettings),
-		e = c.next(); !e.done; e = c.next()) {
-			d = _.n(e.value);
-			e = d.next().value;
-			var f = d.next().value;
-			d = b;
-			e = Ts(Us(e), f);
-			_.Zw(d, 3, _.$K, e)
-		}
-	c = new _.Hk;
-	a.send(b, c);
-	return c
-}`
-
-
-
-// const snippet2_deviation = `_.s4a = function(a, b, c) {
-// 	var d = c.jsonMode ? "application/json" : "text/plain"
-// 	  , e = (new _.mL).setModel(c.modelName);
-// 	d = _.gL(_.fL(_.eL(_.dL(new _.cL, c.temperature), .95), 40), d);
-// 	d = _.bs(d, _.Eu, 9, c.jsonMode ? c.schema : void 0);
-// 	b = _.iPa(_.nL(e, d), b);
-// 	b = _.eD(b, 7, _.wB, c.tools || []);
-// 	c.systemInstructions && _.oL(b, _.LOa(_.YK(new _.SK, "model"), _.wy(new _.ty, c.systemInstructions)));
-// 	if (c.safetySettings)
-// 		for (c = _.n(c.safetySettings),
-// 		e = c.next(); !e.done; e = c.next()) {
-// 			e = d.next().value;
-// 			d = _.n(e.value);
-// 			var f = d.next().value;
-// 			d = b;
-// 			e = Ts(Us(e), f);
-// 			_.$w(d, 3, _.hL, e)
-// 		}
-// 	c = new _.Ik;
-// 	a.send(b, c);
-// 	return c
-// }`
-
-let snippet2 = `_.s4a = function(a, b, c) {
-    var d = c.jsonMode ? "application/json" : "text/plain"
-        , e = (new _.mL).setModel(c.modelName);
-    d = _.gL(_.fL(_.eL(_.dL(new _.cL, c.temperature), .95), 40), d);
-    d = _.bs(d, _.Eu, 9, c.jsonMode ? c.schema : void 0);
-    b = _.iPa(_.nL(e, d), b);
-    b = _.eD(b, 7, _.wB, c.tools || []);
-    c.systemInstructions && _.oL(b, _.LOa(_.YK(new _.SK, "model"), _.wy(new _.ty, c.systemInstructions)));
-    if (c.safetySettings)
-        for (c = _.n(c.safetySettings),
-        e = c.next(); !e.done; e = c.next()) {
-            d = _.n(e.value);
-            e = d.next().value;
-            var f = d.next().value;
-            d = b;
-            e = Ts(Us(e), f);
-            _.$w(d, 3, _.hL, e)
-        }
-    c = new _.Ik;
-    a.send(b, c);
-    return c
-}`
-
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
 import * as fs from 'fs';
 
-// Define file paths (assuming they are in the same directory as index.ts)
-// Adjust paths if necessary.
-const filePath1 = 'new.js';
-const filePath2 = 'old.js';
+async function main() {
+    const argv = await yargs(hideBin(process.argv))
+        .option('f', {
+            alias: 'files',
+            type: 'array',
+            description: 'Specify two local files to diff (e.g., -f old.js new.js)',
+            nargs: 2,
+            string: true, // Ensure file paths are treated as strings
+        })
+        .option('u', {
+            alias: 'url',
+            type: 'string',
+            description: 'Specify the URL to monitor [WIP]',
+        })
+        .option('i', {
+            alias: 'interval',
+            type: 'string',
+            description: 'Set the interval for checking the URL (e.g., 1h, 2s) [WIP]',
+        })
+        .option('d', {
+            alias: 'display-diff',
+            type: 'boolean',
+            description: 'Display the diff output [WIP]',
+            default: true, // Default to showing diff for file comparison
+        })
+        .option('t', {
+            alias: 'tokens',
+            type: 'boolean',
+            description: 'Output token & char start/stop positions [WIP]',
+            default: false,
+        })
+        .usage('Usage: $0 -f <file1> <file2> [-d] [-t] | -u <url> [-i <interval>]')
+        .help()
+        .alias('help', 'h')
+        .check((argv) => {
+            if (!argv.f && !argv.u) {
+                throw new Error('Error: You must specify either files to compare using -f or a URL to monitor using -u.');
+            }
+            if (argv.f && argv.u) {
+                throw new Error('Error: Please specify either files (-f) or a URL (-u), not both.');
+            }
+            if (argv.f && argv.f.length !== 2) {
+                 // yargs nargs: 2 should handle this, but added as a safeguard
+                 throw new Error('Error: Option -f requires exactly two file paths.');
+            }
+            // Add more checks if needed (e.g., for interval format)
+            return true; // Indicate success
+        })
+        .fail((msg, err, yargs) => {
+            // Custom failure handler to show help
+            console.error(msg || err?.message || 'An unknown error occurred.');
+            console.error("\nPlease use '--help' for usage information.");
+            process.exit(1);
+        })
+        .strict() // Report errors for unknown options
+        .argv;
 
-// Read file contents synchronously
-// let snippet1 = fs.readFileSync(filePath1, 'utf-8');
-// let snippet2 = fs.readFileSync(filePath2, 'utf-8');
+    let snippet1: string | undefined;
+    let snippet2: string | undefined;
+
+    if (argv.f) {
+        // File comparison mode
+        const [filePath1, filePath2] = argv.f;
+        console.log(`Comparing files: ${filePath1} vs ${filePath2}`);
+
+        try {
+            snippet1 = fs.readFileSync(filePath1, 'utf-8');
+            snippet2 = fs.readFileSync(filePath2, 'utf-8');
+            console.log(`Successfully read files.`);
+        } catch (error: any) {
+            console.error(`Error reading files: ${error.message}`);
+            process.exit(1);
+        }
+
+        // Prettify code before comparison
+        try {
+            // Assuming 'babel' parser is suitable for .js files. Adjust if needed.
+            const prettierOptions = { parser: "babel", printWidth: 80 };
+            console.log("Attempting to prettify code snippets...");
+            snippet1 = await prettier.format(snippet1, prettierOptions);
+            snippet2 = await prettier.format(snippet2, prettierOptions);
+            console.log("Code snippets successfully prettified.");
+        } catch (error) {
+            console.error("Failed to prettify code snippets:", error);
+            console.warn("Proceeding with original code snippets for comparison. AST comparison might be affected by formatting differences.");
+            // Execution continues with the original snippets
+        }
+
+        // Proceed with comparison only if snippets are loaded
+        if (snippet1 !== undefined && snippet2 !== undefined) {
+            // Generate ASTs
+            console.log("Generating ASTs...");
+            let ast1, ast2;
+            try {
+                 ast1 = generateAST(snippet1);
+                 ast2 = generateAST(snippet2);
+                 console.log("ASTs generated successfully.");
+            } catch(error) {
+                 console.error("Failed to generate ASTs. Aborting comparison.");
+                 process.exit(1);
+            }
 
 
-// Note: This block requires the 'prettier' library.
-// Ensure it's installed (`npm install prettier @types/prettier --save-dev` or `yarn add prettier @types/prettier --dev`)
-// and imported, preferably at the top of this file (e.g., `import * as prettier from 'prettier';`).
-// Also, the `snippet1` and `snippet2` variables declared above must be changed from `const` to `let` to allow reassignment here.
-try {
-    // Assuming 'babel' parser is suitable for .js files. Adjust if needed (e.g., 'typescript').
-    const prettierOptions = { parser: "babel", printWidth: 80 }; // Common options
+            // Compare the generated ASTs
+            console.log("Comparing ASTs...");
+            const deviations = compareASTs(ast1, ast2);
+            console.log(`Comparison complete. Found ${deviations.length} structural deviation(s).`);
 
-    console.log("Attempting to prettify code snippets...");
-    // Reassign the variables with their prettified versions
-    snippet1 = await prettier.format(snippet1, prettierOptions);
-    snippet2 = await prettier.format(snippet2, prettierOptions);
-    console.log("Code snippets successfully prettified.");
+            // Generate and display Diffs based on flags
+            if (argv.d) {
+                 console.log("Generating diff output (-d)...");
+                 generateDiffs(snippet1, snippet2, deviations);
+            } else {
+                 console.log("Diff output skipped (use -d to display).");
+            }
 
-} catch (error) {
-    console.error("Failed to prettify code snippets:", error);
-    console.warn("Proceeding with original code snippets for comparison. AST comparison might be affected by formatting differences.");
-    // Execution continues with the original, potentially unformatted snippets
+            // Output token/position info if requested
+            if (argv.t) {
+                 console.log("Outputting deviation details (-t):");
+                 // Output deviations in a structured format (e.g., JSON)
+                 // Consider filtering or formatting this output further based on requirements
+                 console.log(JSON.stringify(deviations, null, 2));
+            }
+        } else {
+             console.error("Code snippets were not loaded correctly. Cannot proceed.");
+             process.exit(1);
+        }
+
+    } else if (argv.u) {
+        // URL monitoring mode (WIP)
+        console.log(`URL monitoring for ${argv.u} is not yet implemented.`);
+        if (argv.i) {
+            console.log(`Interval set to ${argv.i}, but monitoring is WIP.`);
+        }
+        console.log("Exiting - URL functionality is work in progress.");
+        process.exit(0); // Exit gracefully for WIP feature
+    }
 }
 
-
-/*
-Note to colleague:
-1. Please remove the hardcoded `snippet1`, `snippet2`, and `snippet2_deviation`
-   variables defined just before this generated block.
-2. Update the code below this block to use the `snippet2` variable
-   (containing the content of old.js) instead of `snippet2_deviation`.
-   Specifically, change:
-   - `const ast2 = generateAST(snippet2_deviation);` to `const ast2 = generateAST(snippet2);`
-   - `generateDiffs(snippet1, snippet2_deviation, deviations)` to `generateDiffs(snippet1, snippet2, deviations)`
-*/
-
-
-// Generate ASTs for the snippets
-const ast1 = generateAST(snippet1);
-const ast2 = generateAST(snippet2);
-
-// Compare the generated ASTs
-const deviations = compareASTs(ast1, ast2);
-
-generateDiffs(snippet1, snippet2, deviations)
+// Execute the main function and handle potential errors
+main().catch(error => {
+    // Catch errors not handled by yargs.fail
+    console.error("\nAn unexpected error occurred during execution:");
+    console.error(error);
+    process.exit(1);
+});
