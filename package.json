@@ -9,7 +9,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@types/prettier": "^3.0.0",
     "acorn": "^8.14.1",
-    "chalk": "^5.4.1"
+    "chalk": "^5.4.1",
+    "prettier": "^3.5.3"
   }
 }
