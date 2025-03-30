@@ -1,10 +1,14 @@
 import { compareASTs } from "./ast/compare";
 import { generateAST } from "./ast/generate";
 import { generateDiffs } from "./diff/generate";
-import * as prettier from 'prettier';
+import { Biome, Distribution } from "@biomejs/js-api"; // Import Biome
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import * as fs from 'fs';
+import * as path from 'path'; // Needed for file path info for Biome
+const biome = await Biome.create({distribution:Distribution.NODE});
+biome.applyConfiguration({files:{maxSize:99999999999999}, formatter:{indentStyle:"space"}})
+
 
 async function main() {
     const argv = await yargs(hideBin(process.argv))
@@ -80,16 +84,34 @@ async function main() {
             process.exit(1);
         }
 
-        // Prettify code before comparison
+        // Format code using Biome before comparison
         try {
-            // Assuming 'babel' parser is suitable for .js files. Adjust if needed.
-            const prettierOptions = { parser: "babel", printWidth: 80 };
-            console.log("Attempting to prettify code snippets...");
-            snippet1 = await prettier.format(snippet1, prettierOptions);
-            snippet2 = await prettier.format(snippet2, prettierOptions);
-            console.log("Code snippets successfully prettified.");
+            console.log("Attempting to format code snippets with Biome...");
+            // Biome needs to be created (can potentially load biome.json config)
+            // Creating it here ensures it's only done when needed for file comparison
+
+            // Use the actual file paths to help Biome determine the parser
+            const formatOptions1 = { filePath: path.basename(filePath1) };
+            const formatOptions2 = { filePath: path.basename(filePath2) };
+
+            const result1 = biome.formatContent(snippet1, formatOptions1);
+            const result2 = biome.formatContent(snippet2, formatOptions2);
+    
+
+            // Basic error check based on Biome's result structure (content might be null/undefined on failure)
+            if (result1.content === undefined || result1.content === null) {
+                 throw new Error(`Biome failed to format ${filePath1}. Diagnostics: ${JSON.stringify(result1.diagnostics)}`);
+            }
+             if (result2.content === undefined || result2.content === null) {
+                 throw new Error(`Biome failed to format ${filePath2}. Diagnostics: ${JSON.stringify(result2.diagnostics)}`);
+            }
+
+            snippet1 = result1.content;
+            snippet2 = result2.content;
+            console.log("Code snippets successfully formatted with Biome.");
+
         } catch (error) {
-            console.error("Failed to prettify code snippets:", error);
+            console.error("Failed to format code snippets with Biome:", error);
             console.warn("Proceeding with original code snippets for comparison. AST comparison might be affected by formatting differences.");
             // Execution continues with the original snippets
         }
@@ -103,8 +125,8 @@ async function main() {
                  ast1 = generateAST(snippet1);
                  ast2 = generateAST(snippet2);
                  console.log("ASTs generated successfully.");
-            } catch(error) {
-                 console.error("Failed to generate ASTs. Aborting comparison.");
+            } catch(error: any) {
+                 console.error(`Failed to generate ASTs: ${error?.message || error}. Aborting comparison.`);
                  process.exit(1);
             }
 
@@ -147,7 +169,7 @@ async function main() {
 
 // Execute the main function and handle potential errors
 main().catch(error => {
-    // Catch errors not handled by yargs.fail
+    // Catch errors not handled by yargs.fail or Biome creation/formatting
     console.error("\nAn unexpected error occurred during execution:");
     console.error(error);
     process.exit(1);

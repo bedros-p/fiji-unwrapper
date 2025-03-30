@@ -3,15 +3,20 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
+    "@biomejs/biome": "1.9.4",
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@biomejs/js-api": "^0.7.1",
+    "@biomejs/wasm-bundler": "^1.9.4",
     "@types/prettier": "^3.0.0",
+    "@types/yargs": "^17.0.33",
     "acorn": "^8.14.1",
     "chalk": "^5.4.1",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "yargs": "^17.7.2"
   }
 }
